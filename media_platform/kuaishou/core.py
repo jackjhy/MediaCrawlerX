@@ -107,6 +107,7 @@ class KuaishouCrawler(AbstractCrawler):
                 for video_detail in vision_search_photo.get("feeds"):
                     video_id_list.append(video_detail.get("photo", {}).get("id"))
                     await kuaishou_store.update_kuaishou_video(video_item=video_detail)
+                    await self.ks_client.download_video(video_item=video_detail)
 
                 # batch fetch video comments
                 page += 1
@@ -122,6 +123,7 @@ class KuaishouCrawler(AbstractCrawler):
         for video_detail in video_details:
             if video_detail is not None:
                 await kuaishou_store.update_kuaishou_video(video_detail)
+                await self.ks_client.download_video(video_item=video_detail)
         await self.batch_get_video_comments(config.KS_SPECIFIED_ID_LIST)
 
     async def get_video_info_task(self, video_id: str, semaphore: asyncio.Semaphore) -> Optional[Dict]:

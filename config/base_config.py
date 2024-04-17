@@ -1,8 +1,8 @@
 # 基础配置
-PLATFORM = "xhs"
+PLATFORM = "ks"
 KEYWORDS = "python,golang"
-LOGIN_TYPE = "qrcode"  # qrcode or phone or cookie
-COOKIES = ""
+LOGIN_TYPE = "cookie"  # qrcode or phone or cookie
+COOKIES = "did=web_150bd660a49058b6ed4b47bd2400859e; didv=1713321171231; kpf=PC_WEB; clientid=3; kpn=KUAISHOU_VISION"
 SORT_TYPE = "popularity_descending"  # 具体值参见media_platform.xxx.field下的枚举值，展示只支持小红书
 CRAWLER_TYPE = "search" # 爬取类型，search(关键词搜索) | detail(帖子相亲)| creator(创作者主页数据)
 
@@ -29,6 +29,8 @@ CRAWLER_MAX_NOTES_COUNT = 20
 
 # 并发爬虫数量控制
 MAX_CONCURRENCY_NUM = 4
+
+ENABLE_DOWNLOAD_VIDEO = True
 
 # 是否开启爬评论模式, 默认不开启爬评论
 ENABLE_GET_COMMENTS = False

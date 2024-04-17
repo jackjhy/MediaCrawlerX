@@ -3,6 +3,8 @@ import asyncio
 import json
 from typing import Any, Callable, Dict, Optional
 from urllib.parse import urlencode
+import re
+import subprocess
 
 import httpx
 from playwright.async_api import BrowserContext, Page
@@ -45,17 +47,34 @@ class KuaiShouClient(AbstactApiClient):
         else:
             return data.get("data", {})
 
+    async def text_request(self, method, url, **kwargs) -> str:
+        async with httpx.AsyncClient(proxies=self.proxies) as client:
+            response = await client.request(
+                method, url, timeout=self.timeout,
+                **kwargs
+            )
+            return response.text()
+
+    async def download(self,url,path,**kwargs):
+        async with httpx.AsyncClient(proxies=self.proxies) as client:
+            response = await client.request(
+                'get', url, timeout=self.timeout,
+                **kwargs
+            )
+            
+            f = open(path, 'wb')
+            f.write(response.content)
+            f.close() 
+
     async def get(self, uri: str, params=None) -> Dict:
         final_uri = uri
         if isinstance(params, dict):
-            final_uri = (f"{uri}?"
-                         f"{urlencode(params)}")
+            final_uri = (f"{uri}?" f"{urlencode(params)}")
         return await self.request(method="GET", url=f"{self._host}{final_uri}", headers=self.headers)
 
     async def post(self, uri: str, data: dict) -> Dict:
         json_str = json.dumps(data, separators=(',', ':'), ensure_ascii=False)
-        return await self.request(method="POST", url=f"{self._host}{uri}",
-                                  data=json_str, headers=self.headers)
+        return await self.request(method="POST", url=f"{self._host}{uri}", data=json_str, headers=self.headers)
 
     async def pong(self) -> bool:
         """get a note to check if login state is ok"""
@@ -100,6 +119,25 @@ class KuaiShouClient(AbstactApiClient):
         }
         return await self.post("", post_data)
 
+    async def download_video(self,video_item: Dict):
+        if not config.ENABLE_DOWNLOAD_VIDEO:
+            utils.logger.info(f"[KuaishouCrawler.batch_download_videos] Crawling comment mode is not enabled")
+            return
+        url = video_item.get("photo", {}).get('photoUrl','')
+        if not url:
+            return
+        if url.find('m3u8') < 0:
+            photo_id = video_item.get("photo", {}).get('id','')
+            await self.download(url,f'data/kuaishou/{photo_id}.mp4',headers=self.headers)
+        else:
+            m3u8 = await self.text_request('get', url, timeout=self.timeout,headers=self.headers)
+            ts_match = re.sub('#E.*', '', m3u8).split()
+            ts_urls = [f"{url.rsplit('/',1)[0]}/{ts_url}" for ts_url in ts_match]
+            for i,ts_url in enumerate(ts_urls):
+                await self.download(ts_url,f'data/kuaishou/{photo_id}_{i}.ts',headers=self.headers)
+            subprocess.call(['ffmpeg', '-i', 'concat:'+'|'.join([f"data/kuaishou/{photo_id}_{i}.ts" for i in range(len(ts_urls))]),'-c','copy', '-y',f'data/kuaishou/{photo_id}_c.mp4'])
+
+            
     async def get_video_info(self, photo_id: str) -> Dict:
         """
         Kuaishou web video detail api
@@ -134,7 +172,7 @@ class KuaiShouClient(AbstactApiClient):
         return await self.post("", post_data)
 
     async def get_video_all_comments(self, photo_id: str, crawl_interval: float = 1.0, is_fetch_sub_comments=False,
-                                     callback: Optional[Callable] = None):
+                                        callback: Optional[Callable] = None):
         """
         get video all comments include sub comments
         :param photo_id:

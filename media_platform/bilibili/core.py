@@ -9,8 +9,7 @@ import random
 from asyncio import Task
 from typing import Dict, List, Optional, Tuple
 
-from playwright.async_api import (BrowserContext, BrowserType, Page,
-                                  async_playwright)
+from playwright.async_api import (BrowserContext, BrowserType, Page, async_playwright)
 
 import config
 from base.base_crawler import AbstractCrawler
