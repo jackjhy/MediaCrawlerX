@@ -114,8 +114,10 @@ class BilibiliCrawler(AbstractCrawler):
                 video_items = await asyncio.gather(*task_list)
                 for video_item in video_items:
                     if video_item:
-                        video_id_list.append(video_item.get("View").get("aid"))
+                        vid = video_item.get("View").get("aid")
+                        video_id_list.append(vid)
                         await bilibili_store.update_bilibili_video(video_item)
+                        await self.bili_client.download_vedio(vid)
 
                 page += 1
                 await self.batch_get_video_comments(video_id_list)
@@ -177,6 +179,7 @@ class BilibiliCrawler(AbstractCrawler):
                 video_aid: str = video_item_view.get("aid")
                 if video_aid:
                     video_aids_list.append(video_aid)
+                    await self.bili_client.download_vedio(video_aid)
                 await bilibili_store.update_bilibili_video(video_detail)
         await self.batch_get_video_comments(video_aids_list)
 

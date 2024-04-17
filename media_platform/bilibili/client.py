@@ -8,6 +8,10 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from urllib.parse import urlencode
 
 import httpx
+import config
+import re
+import subprocess
+import os
 from playwright.async_api import BrowserContext, Page
 
 from base.base_crawler import AbstactApiClient
@@ -46,6 +50,25 @@ class BilibiliClient(AbstactApiClient):
             raise DataFetchError(data.get("message", "unkonw error"))
         else:
             return data.get("data", {})
+
+    async def text_request(self, method, url, **kwargs) -> str:
+        async with httpx.AsyncClient(proxies=self.proxies) as client:
+            response = await client.request(
+                method, url, timeout=self.timeout,
+                **kwargs
+            )
+            return response.text
+
+    async def download(self,url,path,**kwargs):
+        async with httpx.AsyncClient(proxies=self.proxies) as client:
+            response = await client.request(
+                'get', url, timeout=self.timeout,
+                **kwargs
+            )
+            
+            f = open(path, 'wb')
+            f.write(response.content)
+            f.close() 
 
     async def pre_request_data(self, req_data: Dict) -> Dict:
         """
@@ -150,6 +173,45 @@ class BilibiliClient(AbstactApiClient):
         else:
             params.update({"bvid": bvid})
         return await self.get(uri, params, enable_params_sign=False)
+    
+    async def download_vedio(self,id:str):
+        if not config.ENABLE_DOWNLOAD_VIDEO:
+            utils.logger.info(f"[KuaishouCrawler.batch_download_videos] Crawling comment mode is not enabled")
+            return
+
+        res = await self.text_request(method='get',url=f'https://www.bilibili.com/video/av{id}/',headers=self.headers)
+        
+        # 获取window.__playinfo__的json对象,[20:]表示截取'window.__playinfo__='后面的json字符串
+        videoPlayInfo = re.findall('<script>window\.__playinfo__=(.*?)</script>',res)[0]
+        videoJson = json.loads(videoPlayInfo)
+        # 获取视频链接和音频链接
+        try:
+            # 2018年以后的b站视频由.audio和.video组成 flag=0表示分为音频与视频
+            videos = videoJson['data']['dash']['video']
+            audios = videoJson['data']['dash']['audio']
+            if len(videos) > 1:
+                for i,v in enumerate(videos):
+                    v_url = v['baseUrl']
+                    await self.download(v_url,f'data/bilibili/{id}_{i}.m4s')
+                subprocess.call(['ffmpeg', '-i', 'concat:'+'|'.join([f"data/bilibili/{id}_{i}.m4s" for i in range(len(videos))]),'-c','copy', '-y',f'data/kuaishou/{id}_c.mp4'])
+                for i in range(len(videos)):
+                    os.remove(f'data/bilibili/{id}_{i}.m4s')
+
+            else:
+                v_url = videos[0]['baseUrl']
+                await self.download(v_url,f'data/bilibili/{id}.mp4',headers=self.headers)
+                if audios:
+                    a_url = audios[0]['baseUrl']
+                    await self.download(a_url,f'data/bilibili/{id}.mp3',headers=self.headers)
+                    ffmpeg = f'ffmpeg -i data/bilibili/{id}.mp4 -i data/bilibili/{id}.mp3 -acodec copy -vcodec copy data/bilibili/{id+"_c.mp4"}'
+                    subprocess.run(ffmpeg)
+                    os.remove(f'data/bilibili/{id}.mp3')
+                    os.remove(f'data/bilibili/{id}.mp4')
+        except Exception:
+            # 2018年以前的b站视频音频视频结合在一起,后缀为.flv flag=1表示只有视频
+            videoURL = videoJson['data']['durl'][0]['url']
+            await self.download(videoURL,f'data/bilibili/{id}.flv',headers=self.headers)
+        
 
     async def get_video_comments(self,
                                  video_id: str,

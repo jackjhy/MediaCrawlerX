@@ -4,6 +4,7 @@ import json
 from typing import Any, Callable, Dict, Optional
 from urllib.parse import urlencode
 import re
+import os
 import subprocess
 
 import httpx
@@ -53,7 +54,7 @@ class KuaiShouClient(AbstactApiClient):
                 method, url, timeout=self.timeout,
                 **kwargs
             )
-            return response.text()
+            return response.text
 
     async def download(self,url,path,**kwargs):
         async with httpx.AsyncClient(proxies=self.proxies) as client:
@@ -136,6 +137,8 @@ class KuaiShouClient(AbstactApiClient):
             for i,ts_url in enumerate(ts_urls):
                 await self.download(ts_url,f'data/kuaishou/{photo_id}_{i}.ts',headers=self.headers)
             subprocess.call(['ffmpeg', '-i', 'concat:'+'|'.join([f"data/kuaishou/{photo_id}_{i}.ts" for i in range(len(ts_urls))]),'-c','copy', '-y',f'data/kuaishou/{photo_id}_c.mp4'])
+            for i in range(len(ts_urls)):
+                os.remove(f'data/kuaishou/{photo_id}_{i}.ts')
 
             
     async def get_video_info(self, photo_id: str) -> Dict:
