@@ -11,8 +11,10 @@ import httpx
 import config
 import re
 import subprocess
+import shutil
 import os
 from playwright.async_api import BrowserContext, Page
+import requests
 
 from base.base_crawler import AbstactApiClient
 from tools import utils
@@ -59,16 +61,22 @@ class BilibiliClient(AbstactApiClient):
             )
             return response.text
 
-    async def download(self,url,path,**kwargs):
-        async with httpx.AsyncClient(proxies=self.proxies) as client:
-            response = await client.request(
-                'get', url, timeout=self.timeout,
-                **kwargs
-            )
-            
+    async def download(self,url,path,**kwargs) -> bool:
+        try:
+            response = requests.get(url=url,headers=self.headers,timeout=(5,15))
+            # async with httpx.AsyncClient(proxies=self.proxies) as client:
+            #     response = await client.request(
+            #         'get', url, timeout=self.timeout,
+            #         **kwargs
+            #     )
             f = open(path, 'wb')
             f.write(response.content)
             f.close() 
+            return True
+        except Exception as e:
+            utils.logger.error(f"[BilibiliCrawler.download] may be been blocked, err:{e}")
+            return False
+        
 
     async def pre_request_data(self, req_data: Dict) -> Dict:
         """
@@ -107,14 +115,13 @@ class BilibiliClient(AbstactApiClient):
             params = await self.pre_request_data(params)
         if isinstance(params, dict):
             final_uri = (f"{uri}?"
-                         f"{urlencode(params)}")
+                        f"{urlencode(params)}")
         return await self.request(method="GET", url=f"{self._host}{final_uri}", headers=self.headers)
 
     async def post(self, uri: str, data: dict) -> Dict:
         data = await self.pre_request_data(data)
         json_str = json.dumps(data, separators=(',', ':'), ensure_ascii=False)
-        return await self.request(method="POST", url=f"{self._host}{uri}",
-                                  data=json_str, headers=self.headers)
+        return await self.request(method="POST", url=f"{self._host}{uri}",data=json_str, headers=self.headers)
 
     async def pong(self) -> bool:
         """get a note to check if login state is ok"""
@@ -189,28 +196,32 @@ class BilibiliClient(AbstactApiClient):
             # 2018年以后的b站视频由.audio和.video组成 flag=0表示分为音频与视频
             videos = videoJson['data']['dash']['video']
             audios = videoJson['data']['dash']['audio']
+            sids = []
             if len(videos) > 1:
                 for i,v in enumerate(videos):
                     v_url = v['baseUrl']
-                    await self.download(v_url,f'data/bilibili/{id}_{i}.m4s')
-                subprocess.call(['ffmpeg', '-i', 'concat:'+'|'.join([f"data/bilibili/{id}_{i}.m4s" for i in range(len(videos))]),'-c','copy', '-y',f'data/kuaishou/{id}_c.mp4'])
-                for i in range(len(videos)):
+                    if await self.download(v_url,f'data/bilibili/{id}_{i}.m4s'):
+                        sids.append(i)
+                subprocess.call(['ffmpeg', '-i', 'concat:'+'|'.join([f"data/bilibili/{id}_{i}.m4s" for i in sids]),'-c','copy', '-y',f'data/kuaishou/{id}.mp4'])
+                for i in sids:
                     os.remove(f'data/bilibili/{id}_{i}.m4s')
-
             else:
                 v_url = videos[0]['baseUrl']
-                await self.download(v_url,f'data/bilibili/{id}.mp4',headers=self.headers)
-                if audios:
-                    a_url = audios[0]['baseUrl']
-                    await self.download(a_url,f'data/bilibili/{id}.mp3',headers=self.headers)
-                    ffmpeg = f'ffmpeg -i data/bilibili/{id}.mp4 -i data/bilibili/{id}.mp3 -acodec copy -vcodec copy data/bilibili/{id+"_c.mp4"}'
-                    subprocess.run(ffmpeg)
-                    os.remove(f'data/bilibili/{id}.mp3')
-                    os.remove(f'data/bilibili/{id}.mp4')
+                if await self.download(v_url,f'data/bilibili/{id}.mp4',headers=self.headers):
+                    if audios:
+                        a_url = audios[0]['baseUrl']
+                        if await self.download(a_url,f'data/bilibili/{id}.mp3',headers=self.headers):
+                            ffmpeg = f'ffmpeg -i data/bilibili/{id}.mp4 -i data/bilibili/{id}.mp3 -acodec copy -vcodec copy data/bilibili/{id+"_c.mp4"}'
+                            subprocess.run(ffmpeg)
+                            os.remove(f'data/bilibili/{id}.mp3')
+                            os.remove(f'data/bilibili/{id}.mp4')
+                            shutil.move(f'data/bilibili/{id}_c.mp4',f'data/bilibili/{id}.mp4')
+            subprocess.call(['ffmpeg', '-i', f'data/bilibili/{id}.mp4','-ss','00:00:05', '-f','image2', '-frames:v', '1','-q:v','2', '-y',f'data/bilibili/{id}.jpeg'])
         except Exception:
             # 2018年以前的b站视频音频视频结合在一起,后缀为.flv flag=1表示只有视频
             videoURL = videoJson['data']['durl'][0]['url']
-            await self.download(videoURL,f'data/bilibili/{id}.flv',headers=self.headers)
+            if await self.download(videoURL,f'data/bilibili/{id}.flv',headers=self.headers):
+                subprocess.call(['ffmpeg', '-i', f'data/bilibili/{id}.flv','-ss','00:00:05', '-f','image2', '-frames:v', '1','-q:v','2', '-y',f'data/bilibili/{id}.jpeg'])
         
 
     async def get_video_comments(self,

@@ -8,6 +8,7 @@ import os
 import subprocess
 
 import httpx
+import requests
 from playwright.async_api import BrowserContext, Page
 
 import config
@@ -57,15 +58,16 @@ class KuaiShouClient(AbstactApiClient):
             return response.text
 
     async def download(self,url,path,**kwargs):
-        async with httpx.AsyncClient(proxies=self.proxies) as client:
-            response = await client.request(
-                'get', url, timeout=self.timeout,
-                **kwargs
-            )
+        response = requests.get(url=url,headers=self.headers)
+        # async with httpx.AsyncClient(proxies=self.proxies) as client:
+        #     response = await client.request(
+        #         'get', url, timeout=self.timeout,
+        #         **kwargs
+        #     )
             
-            f = open(path, 'wb')
-            f.write(response.content)
-            f.close() 
+        f = open(path, 'wb')
+        f.write(response.content)
+        f.close() 
 
     async def get(self, uri: str, params=None) -> Dict:
         final_uri = uri
@@ -136,9 +138,10 @@ class KuaiShouClient(AbstactApiClient):
             ts_urls = [f"{url.rsplit('/',1)[0]}/{ts_url}" for ts_url in ts_match]
             for i,ts_url in enumerate(ts_urls):
                 await self.download(ts_url,f'data/kuaishou/{photo_id}_{i}.ts',headers=self.headers)
-            subprocess.call(['ffmpeg', '-i', 'concat:'+'|'.join([f"data/kuaishou/{photo_id}_{i}.ts" for i in range(len(ts_urls))]),'-c','copy', '-y',f'data/kuaishou/{photo_id}_c.mp4'])
+            subprocess.call(['ffmpeg', '-i', 'concat:'+'|'.join([f"data/kuaishou/{photo_id}_{i}.ts" for i in range(len(ts_urls))]),'-c','copy', '-y',f'data/kuaishou/{photo_id}.mp4'])
             for i in range(len(ts_urls)):
                 os.remove(f'data/kuaishou/{photo_id}_{i}.ts')
+        subprocess.call(['ffmpeg', '-i', f'data/kuaishou/{photo_id}.mp4','-ss','00:00:05', '-f','image2', '-frames:v', '1','-q:v','2', '-y',f'data/kuaishou/{photo_id}.jpeg'])
 
             
     async def get_video_info(self, photo_id: str) -> Dict:
