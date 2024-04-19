@@ -126,23 +126,25 @@ class KuaiShouClient(AbstactApiClient):
         if not config.ENABLE_DOWNLOAD_VIDEO:
             utils.logger.info(f"[KuaishouCrawler.batch_download_videos] Crawling comment mode is not enabled")
             return
-        url = video_item.get("photo", {}).get('photoUrl','')
-        if not url:
-            return
-        if url.find('m3u8') < 0:
-            photo_id = video_item.get("photo", {}).get('id','')
-            await self.download(url,f'data/kuaishou/{photo_id}.mp4',headers=self.headers)
-        else:
-            m3u8 = await self.text_request('get', url, timeout=self.timeout,headers=self.headers)
-            ts_match = re.sub('#E.*', '', m3u8).split()
-            ts_urls = [f"{url.rsplit('/',1)[0]}/{ts_url}" for ts_url in ts_match]
-            for i,ts_url in enumerate(ts_urls):
-                await self.download(ts_url,f'data/kuaishou/{photo_id}_{i}.ts',headers=self.headers)
-            subprocess.call(['ffmpeg', '-i', 'concat:'+'|'.join([f"data/kuaishou/{photo_id}_{i}.ts" for i in range(len(ts_urls))]),'-c','copy', '-y',f'data/kuaishou/{photo_id}.mp4'])
-            for i in range(len(ts_urls)):
-                os.remove(f'data/kuaishou/{photo_id}_{i}.ts')
-        subprocess.call(['ffmpeg', '-i', f'data/kuaishou/{photo_id}.mp4','-ss','00:00:05', '-f','image2', '-frames:v', '1','-q:v','2', '-y',f'data/kuaishou/{photo_id}.jpeg'])
-
+        try:
+            url = video_item.get("photo", {}).get('photoUrl','')
+            if not url:
+                return
+            if url.find('m3u8') < 0:
+                photo_id = video_item.get("photo", {}).get('id','')
+                await self.download(url,f'data/kuaishou/{photo_id}.mp4',headers=self.headers)
+            else:
+                m3u8 = await self.text_request('get', url, timeout=self.timeout,headers=self.headers)
+                ts_match = re.sub('#E.*', '', m3u8).split()
+                ts_urls = [f"{url.rsplit('/',1)[0]}/{ts_url}" for ts_url in ts_match]
+                for i,ts_url in enumerate(ts_urls):
+                    await self.download(ts_url,f'data/kuaishou/{photo_id}_{i}.ts',headers=self.headers)
+                subprocess.call(['ffmpeg', '-i', 'concat:'+'|'.join([f"data/kuaishou/{photo_id}_{i}.ts" for i in range(len(ts_urls))]),'-c','copy', '-y',f'data/kuaishou/{photo_id}.mp4'])
+                for i in range(len(ts_urls)):
+                    os.remove(f'data/kuaishou/{photo_id}_{i}.ts')
+            subprocess.call(['ffmpeg', '-i', f'data/kuaishou/{photo_id}.mp4','-ss','00:00:05', '-f','image2', '-frames:v', '1','-q:v','2', '-y',f'data/kuaishou/{photo_id}.jpeg'])
+        except Exception as e:
+            utils.logger.info(f"[KuaishouCrawler.batch_download_videos] download failed",e)
             
     async def get_video_info(self, photo_id: str) -> Dict:
         """

@@ -1,6 +1,6 @@
 # 基础配置
 PLATFORM = "ks"
-KEYWORDS = "golang"
+KEYWORDS = "锻造"
 LOGIN_TYPE = "cookie"  # qrcode or phone or cookie
 COOKIES = "did=web_150bd660a49058b6ed4b47bd2400859e; didv=1713321171231; kpf=PC_WEB; clientid=3; kpn=KUAISHOU_VISION"
 SORT_TYPE = "popularity_descending"  # 具体值参见media_platform.xxx.field下的枚举值，展示只支持小红书

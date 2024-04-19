@@ -182,47 +182,38 @@ class BilibiliClient(AbstactApiClient):
         return await self.get(uri, params, enable_params_sign=False)
     
     async def download_vedio(self,id:str):
-        if not config.ENABLE_DOWNLOAD_VIDEO:
-            utils.logger.info(f"[KuaishouCrawler.batch_download_videos] Crawling comment mode is not enabled")
-            return
-
-        res = await self.text_request(method='get',url=f'https://www.bilibili.com/video/av{id}/',headers=self.headers)
-        
-        # 获取window.__playinfo__的json对象,[20:]表示截取'window.__playinfo__='后面的json字符串
-        videoPlayInfo = re.findall('<script>window\.__playinfo__=(.*?)</script>',res)[0]
-        videoJson = json.loads(videoPlayInfo)
-        # 获取视频链接和音频链接
         try:
+            if not config.ENABLE_DOWNLOAD_VIDEO:
+                utils.logger.info(f"[BilibiliCrawler.batch_download_videos] Crawling comment mode is not enabled")
+                return
+
+            res = await self.text_request(method='get',url=f'https://www.bilibili.com/video/av{id}/',headers=self.headers)
+        
+            # 获取window.__playinfo__的json对象,[20:]表示截取'window.__playinfo__='后面的json字符串
+            videoPlayInfo = re.findall('<script>window\.__playinfo__=(.*?)</script>',res)[0]
+            videoJson = json.loads(videoPlayInfo)
+            # 获取视频链接和音频链接
             # 2018年以后的b站视频由.audio和.video组成 flag=0表示分为音频与视频
             videos = videoJson['data']['dash']['video']
             audios = videoJson['data']['dash']['audio']
-            sids = []
-            if len(videos) > 1:
-                for i,v in enumerate(videos):
-                    v_url = v['baseUrl']
-                    if await self.download(v_url,f'data/bilibili/{id}_{i}.m4s'):
-                        sids.append(i)
-                subprocess.call(['ffmpeg', '-i', 'concat:'+'|'.join([f"data/bilibili/{id}_{i}.m4s" for i in sids]),'-c','copy', '-y',f'data/kuaishou/{id}.mp4'])
-                for i in sids:
-                    os.remove(f'data/bilibili/{id}_{i}.m4s')
-            else:
-                v_url = videos[0]['baseUrl']
+            v_url = videos[0]['baseUrl']
+            if v_url:
                 if await self.download(v_url,f'data/bilibili/{id}.mp4',headers=self.headers):
                     if audios:
                         a_url = audios[0]['baseUrl']
                         if await self.download(a_url,f'data/bilibili/{id}.mp3',headers=self.headers):
-                            ffmpeg = f'ffmpeg -i data/bilibili/{id}.mp4 -i data/bilibili/{id}.mp3 -acodec copy -vcodec copy data/bilibili/{id+"_c.mp4"}'
-                            subprocess.run(ffmpeg)
+                            # ffmpeg = f'ffmpeg -i data/bilibili/{id}.mp4 -i data/bilibili/{id}.mp3 -acodec copy -vcodec copy data/bilibili/{id}_c.mp4'
+                            subprocess.run(['ffmpeg','-i',f'data/bilibili/{id}.mp4','-i',f'data/bilibili/{id}.mp3','-acodec', 'copy','-vcodec','copy',f'data/bilibili/{id}_c.mp4'])
                             os.remove(f'data/bilibili/{id}.mp3')
                             os.remove(f'data/bilibili/{id}.mp4')
                             shutil.move(f'data/bilibili/{id}_c.mp4',f'data/bilibili/{id}.mp4')
-            subprocess.call(['ffmpeg', '-i', f'data/bilibili/{id}.mp4','-ss','00:00:05', '-f','image2', '-frames:v', '1','-q:v','2', '-y',f'data/bilibili/{id}.jpeg'])
-        except Exception:
-            # 2018年以前的b站视频音频视频结合在一起,后缀为.flv flag=1表示只有视频
-            videoURL = videoJson['data']['durl'][0]['url']
-            if await self.download(videoURL,f'data/bilibili/{id}.flv',headers=self.headers):
-                subprocess.call(['ffmpeg', '-i', f'data/bilibili/{id}.flv','-ss','00:00:05', '-f','image2', '-frames:v', '1','-q:v','2', '-y',f'data/bilibili/{id}.jpeg'])
-        
+                subprocess.call(['ffmpeg', '-i', f'data/bilibili/{id}.mp4','-ss','00:00:05', '-f','image2', '-frames:v', '1','-q:v','2', '-y',f'data/bilibili/{id}.jpeg'])
+            else:
+                videoURL = videoJson['data']['durl'][0]['url']
+                if await self.download(videoURL,f'data/bilibili/{id}.flv',headers=self.headers):
+                    subprocess.call(['ffmpeg', '-i', f'data/bilibili/{id}.flv','-ss','00:00:05', '-f','image2', '-frames:v', '1','-q:v','2', '-y',f'data/bilibili/{id}.jpeg'])
+        except Exception as e:
+            utils.logger.info(f"[BilibiliCrawler.batch_download_videos] download failed {id}",e)
 
     async def get_video_comments(self,
                                  video_id: str,
